@@ -280,16 +280,23 @@ async function refresh() {
     }
     paintLists();
     paintSelection();
+    let svcInfo = '';
+    try {
+      const ss = await host.serviceStatus();
+      svcInfo = `状态=${ss && ss.status ? ss.status : '?'}`;
+    } catch (e) {
+      svcInfo = `状态探针失败(${e && e.code ? e.code : e})`;
+    }
     const st = await syncToService().catch((e) => { showError(e.message); return null; });
     if (st) {
-      $('svc').textContent = `服务运行中 · ${st.count} 条`;
+      $('svc').textContent = `服务运行中 · ${st.count} 条 · ${svcInfo}`;
       const key2 = stem ? await storageKey(stem) : null;
       if (key2) {
         const v2 = await host.storage.get(key2);
         if (v2 && Array.isArray(v2.items)) { reminders = v2.items; paintLists(); paintSelection(); }
       }
     } else if (!$('errSlot').textContent) {
-      $('svc').textContent = '服务未就绪';
+      $('svc').textContent = `服务未就绪 · ${svcInfo}`;
     }
   } catch (e) {
     showError(`读取失败：${e && e.message ? e.message : e}`);
