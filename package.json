@@ -1,6 +1,6 @@
 {
   "name": "openchamber-todo-reminder",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "OpenChamber extension: countdown / daily reminders for sidebar todos. Panel for config, local service holds the timer and fires a Windows notification.",

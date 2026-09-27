@@ -5,8 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>待办提醒</title>
 <style>
-  /* Layout only — colors/fonts come from the host theme via applyHostReady. */
+  /* Layout only — colors come from the host theme via applyHostReady.
+   * Font stack is pinned to the host app body rule verbatim (same engine +
+   * same stack = same glyphs), instead of trusting theme token vars. */
   body { margin: 0; padding: 12px; }
+  body .oc-sdk, body .oc-sdk button, body .oc-sdk input,
+  body .oc-sdk select, body .oc-sdk textarea {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
   .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
   .grow { flex: 1 1 auto; min-width: 0; }
   .muted-line { opacity: .65; font-size: 12px; margin: 4px 0; }
