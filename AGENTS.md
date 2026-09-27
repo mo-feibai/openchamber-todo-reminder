@@ -28,6 +28,7 @@
 
 - Env `OPENCHAMBER_SERVICE_PORT/TOKEN`；只绑 127.0.0.1；所有请求（含 `/health`）验 Bearer；就绪靠 `GET /health` → 200。
 - 面板 → `serviceRequest` 代理；面板永远见不到 token/端口。
+- **`serviceRequest`/`request` 的 `body` 必须是 JSON 字符串**（`GuestRequest.body?: string`）。传对象会被宿主 schema 静默丢弃，20 秒后报 `HOST_TIMEOUT`（已踩过：面板首页同步全挂）。返回值也不是负载本身，而是 `{ status, body: <JSON 字符串> }`，需自行 `JSON.parse(res.body)`。
 - 面板是配置源，service 是触发源；sync 按 id 合并，service 侧 `firedAt/lastFiredOn` 优先（防面板关闭期间重复触发）。
 - 通知走 inbox PowerShell `NotifyIcon` 气球：标题 ≤63 字、正文 ≤250 字，无点击回调。
 - `onReady` 会多次触发：面板每次重建前先清定时器/订阅，注意 32 订阅上限与 `dispose()`。

@@ -187,13 +187,23 @@ async function syncToService() {
     const v = await host.storage.get(k);
     if (v && Array.isArray(v.items)) all.push(...v.items);
   }
+  /*
+   * The host validates `body` as a JSON *string* (GuestRequest.body?: string)
+   * and silently drops a message that fails its schema — which surfaces as
+   * HOST_TIMEOUT twenty seconds later. Always stringify.
+   */
   try {
-    await host.serviceRequest({ method: 'POST', path: '/reminders/sync', body: { items: all } });
+    const res = await host.serviceRequest({ method: 'POST', path: '/reminders/sync', body: JSON.stringify({ items: all }) });
+    if (res && res.status >= 400) {
+      throw new Error(`service ${res.status} ${String(res.body || '').slice(0, 120)}`);
+    }
   } catch (e) {
     throw new Error(`同步到本地服务失败 (${e && e.code ? e.code : e})。请确认扩展已获批“运行本地服务”。`);
   }
   try {
-    const st = await host.serviceRequest({ method: 'GET', path: '/reminders/status' });
+    // GuestRequestResult carries the service answer as a JSON string.
+    const res = await host.serviceRequest({ method: 'GET', path: '/reminders/status' });
+    const st = res && res.body ? JSON.parse(res.body) : null;
     if (st && Array.isArray(st.items)) {
       const state = new Map(st.items.map((i) => [i.id, i]));
       for (const k of keys) {
@@ -349,7 +359,7 @@ async function addReminder() {
 async function testNotify() {
   showError('');
   try {
-    await host.serviceRequest({ method: 'POST', path: '/notify/test', body: { title: '⏰ 待办提醒 · 测试', body: '通知链路正常。面板关闭后提醒仍会弹出。' } });
+    await host.serviceRequest({ method: 'POST', path: '/notify/test', body: JSON.stringify({ title: '⏰ 待办提醒 · 测试', body: '通知链路正常。面板关闭后提醒仍会弹出。' }) });
   } catch (e) {
     showError(`测试失败：${e && e.message ? e.message : e}`);
   }
