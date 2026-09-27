@@ -287,6 +287,7 @@ async function refresh() {
     } catch (e) {
       svcInfo = `状态探针失败(${e && e.code ? e.code : e})`;
     }
+    $('svc').textContent = svcInfo;
     const st = await syncToService().catch((e) => { showError(e.message); return null; });
     if (st) {
       $('svc').textContent = `服务运行中 · ${st.count} 条 · ${svcInfo}`;
@@ -297,6 +298,8 @@ async function refresh() {
       }
     } else if (!$('errSlot').textContent) {
       $('svc').textContent = `服务未就绪 · ${svcInfo}`;
+    } else {
+      $('svc').textContent = svcInfo;
     }
   } catch (e) {
     showError(`读取失败：${e && e.message ? e.message : e}`);
