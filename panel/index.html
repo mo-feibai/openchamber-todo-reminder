@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>待办提醒</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; padding: 12px; font: 13px/1.5 system-ui, "Microsoft YaHei", sans-serif; }
+  body[data-theme="dark"] { background: #1e1e1e; color: #ddd; }
+  body[data-theme="light"] { background: #fff; color: #222; }
+  h3 { margin: 12px 0 6px; font-size: 13px; }
+  h3:first-child { margin-top: 0; }
+  .muted { opacity: .65; font-size: 12px; }
+  ul { margin: 4px 0; padding-left: 20px; }
+  li { margin: 2px 0; word-break: break-all; }
+  .row { display: flex; gap: 6px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
+  input, select, button { font: inherit; padding: 4px 8px; }
+  input[type="number"] { width: 64px; }
+  input[type="text"] { width: 90px; }
+  button { cursor: pointer; }
+  .card { border: 1px solid #8884; border-radius: 8px; padding: 8px 10px; margin: 6px 0; }
+  .warn { color: #c77; }
+  .ok { color: #4a4; }
+  #err { white-space: pre-wrap; }
+</style>
+</head>
+<body>
+  <h3>📋 <span id="proj">…</span> <span class="muted" id="todoCount"></span></h3>
+  <ul id="todos"></ul>
+  <div class="row muted" id="pickerRow" hidden>
+    <span>手动选择：</span><select id="picker"></select>
+  </div>
+  <h3>⏱ 新建提醒</h3>
+  <div class="row">
+    <select id="mode"><option value="once">单次</option><option value="daily">每天</option></select>
+    <span id="onceBox"> <input id="minutes" type="number" min="1" max="1440" value="25"> 分钟后</span>
+    <span id="dailyBox" hidden> <input id="clock" type="text" value="09:00" placeholder="HH:mm"></span>
+    <button id="add">开始</button>
+  </div>
+  <h3>🔔 已有提醒 <span class="muted" id="svc"></span></h3>
+  <div id="rems"></div>
+  <div class="row">
+    <button id="test">发送测试通知</button>
+    <button id="refresh">刷新</button>
+  </div>
+  <div id="err" class="warn"></div>
+  <script src="./main.js"></script>
+</body>
+</html>

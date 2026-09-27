@@ -1,0 +1,38 @@
+{
+  "name": "openchamber-todo-reminder",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "OpenChamber extension: countdown / daily reminders for sidebar todos. Panel for config, local service holds the timer and fires a Windows notification.",
+  "scripts": {
+    "build": "npm run build:panel && npm run build:service",
+    "build:panel": "esbuild panel/main.ts --bundle --format=iife --platform=browser --minify --outfile=panel/main.js",
+    "build:service": "esbuild service/main.ts --bundle --format=esm --platform=node --packages=external --outfile=service/main.js"
+  },
+  "devDependencies": {
+    "@openchamber/sdk": "2.0.2",
+    "esbuild": "^0.28.2"
+  },
+  "openchamber": {
+    "apiVersion": 1,
+    "engines": {
+      "openchamber": ">=2.0.2"
+    },
+    "contributes": {
+      "panel": {
+        "id": "todo-reminder",
+        "name": "待办提醒",
+        "icon": "timer",
+        "entry": "panel/index.html"
+      },
+      "capabilities": [],
+      "filesystem": [
+        "~/.config/openchamber/projects/**"
+      ],
+      "service": {
+        "entry": "service/main.js",
+        "runtime": "host"
+      }
+    }
+  }
+}
