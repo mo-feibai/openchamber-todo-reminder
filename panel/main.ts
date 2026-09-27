@@ -142,6 +142,7 @@ function mountChrome() {
     activeId: mode,
     onChange: (id) => {
       mode = id;
+      hTabs.update({ activeId: id }); // kit 不自切高亮，受控模式必须显式同步
       $('onceRow').hidden = id !== 'once';
       $('dailyRow').hidden = id !== 'daily';
     },
