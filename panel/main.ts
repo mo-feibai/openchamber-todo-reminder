@@ -1,19 +1,32 @@
 /**
- * todo-reminder panel: visual config + todo viewer.
- * The service (not this frame) owns timers and fires OS notifications,
- * so reminders survive this panel being closed.
+ * todo-reminder panel: visual config + todo viewer, styled with the host kit.
+ * The service (not this frame) owns timers and fires OS notifications.
  */
 import { connectHost } from '@openchamber/sdk';
+import {
+  applyHostReady,
+  mountBanner,
+  mountButton,
+  mountList,
+  mountSelect,
+  mountSeparator,
+  mountTabs,
+  mountText,
+  mountTextField,
+} from '@openchamber/sdk/ui';
 
 const $ = (id) => document.getElementById(id);
 const host = connectHost();
 
 let directory = null;
 let sessionTitle = null;
-let overrideStem = null; // manual project pick
-let reminders = []; // current view items (merged with service state)
+let overrideStem = null;
+let reminders = [];
 let todos = [];
-let unsub = [];
+let mode = 'once';
+let minutes = '25';
+let clock = '09:00';
+let selectedRem = null;
 
 /* ---------- project id <-> context path (mirrors host project-id.js) ---------- */
 
@@ -35,7 +48,6 @@ function base64UrlToString(s) {
   return new TextDecoder().decode(bytes);
 }
 
-/* Compact pure-JS SHA-256 fallback (used only if crypto.subtle is missing). */
 function sha256Sync(ascii) {
   const K = [0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2];
   let h0 = 0x6a09e667, h1 = 0xbb67ae85, h2 = 0x3c6ef372, h3 = 0xa54ff53a;
@@ -110,11 +122,49 @@ function projectLabel(dir) {
   return last.slice(0, 40);
 }
 
-/* ---------- host calls ---------- */
-
-function err(msg) {
-  $('err').textContent = msg || '';
+function uuid() {
+  if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+  return 'id-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 1e9).toString(36);
 }
+
+/* ---------- kit handles (mounted once) ---------- */
+
+let hHead, hSub, hTodos, hPicker, hTabs, hMinutes, hClock, hAdd, hRemsHead, hRems;
+let hSelDesc, hDel, hTest, hRefresh, hErr;
+
+function mountChrome() {
+  hHead = mountText($('head'), { text: '待办提醒' });
+  hSub = mountText($('sub'), { text: '' });
+  hTodos = mountList($('todos'), { items: [], onSelect: () => {}, emptyText: '暂无未完成待办', ariaLabel: '待办列表' });
+  mountSeparator($('sep1'), {});
+  hTabs = mountTabs($('tabs'), {
+    items: [{ id: 'once', label: '单次' }, { id: 'daily', label: '每天' }],
+    activeId: mode,
+    onChange: (id) => {
+      mode = id;
+      $('onceRow').hidden = id !== 'once';
+      $('dailyRow').hidden = id !== 'daily';
+    },
+  });
+  hMinutes = mountTextField($('minutesField'), { value: minutes, onChange: (v) => { minutes = v; }, helper: 'N 分钟后提醒一次' });
+  hClock = mountTextField($('clockField'), { value: clock, onChange: (v) => { clock = v; }, helper: '每天固定时刻 (HH:mm)', mono: true });
+  hAdd = mountButton($('addRow'), { label: '开始', variant: 'default', onClick: () => addReminder() });
+  mountSeparator($('sep2'), {});
+  hRemsHead = mountText($('remsHead'), { text: '已有提醒' });
+  hRems = mountList($('rems'), { items: [], onSelect: (id) => selectReminder(id), emptyText: '暂无提醒', ariaLabel: '提醒列表' });
+  hSelDesc = mountText($('selDesc'), { text: '' });
+  hDel = mountButton($('delBtn'), { label: '取消该提醒', variant: 'destructive', size: 'sm', onClick: () => deleteSelected() });
+  hTest = mountButton($('footRow'), { label: '发送测试通知', variant: 'secondary', size: 'sm', onClick: () => testNotify() });
+  hRefresh = mountButton($('footRow'), { label: '刷新', variant: 'ghost', size: 'sm', onClick: () => refresh() });
+}
+
+function showError(msg) {
+  $('errSlot').innerHTML = '';
+  if (hErr) { try { hErr.dispose(); } catch { /* ignore */ } hErr = null; }
+  if (msg) hErr = mountBanner($('errSlot'), { tone: 'error', title: '出错了', body: msg });
+}
+
+/* ---------- host calls ---------- */
 
 async function readTodos(stem) {
   try {
@@ -128,12 +178,7 @@ async function readTodos(stem) {
   }
 }
 
-async function serviceCall(method, path, body) {
-  return host.serviceRequest({ method, path, body });
-}
-
 async function syncToService() {
-  // Push ALL projects' reminders (cross-project scheduling); then merge fired state back.
   const keys = await host.storage.keys();
   const all = [];
   for (const k of keys) {
@@ -142,15 +187,14 @@ async function syncToService() {
     if (v && Array.isArray(v.items)) all.push(...v.items);
   }
   try {
-    await serviceCall('POST', '/reminders/sync', { items: all });
+    await host.serviceRequest({ method: 'POST', path: '/reminders/sync', body: { items: all } });
   } catch (e) {
-    throw new Error(`同步到本地服务失败 (${e && e.code ? e.code : e}). 请确认扩展已获批“运行本地服务”。`);
+    throw new Error(`同步到本地服务失败 (${e && e.code ? e.code : e})。请确认扩展已获批“运行本地服务”。`);
   }
   try {
-    const st = await serviceCall('GET', '/reminders/status');
+    const st = await host.serviceRequest({ method: 'GET', path: '/reminders/status' });
     if (st && Array.isArray(st.items)) {
       const state = new Map(st.items.map((i) => [i.id, i]));
-      // write back fired state per project key
       for (const k of keys) {
         if (!k.startsWith('reminders:') && !k.startsWith('reminders-h:')) continue;
         const v = await host.storage.get(k);
@@ -181,6 +225,15 @@ function fmtRemain(ms) {
   return `剩余 ${Math.floor(m / 60)} 小时 ${m % 60} 分`;
 }
 
+function remDesc(r, now) {
+  if (r.mode === 'once') {
+    if (r.firedAt) return '单次 · 已触发';
+    return `单次 · ${fmtRemain((r.dueAt || 0) - now)}`;
+  }
+  const n = nextAtOf(r, now);
+  return n ? `每天 · ${r.time}（${fmtRemain(n - now)}）` : `每天 · ${r.time || '??:??'}`;
+}
+
 function nextAtOf(r, now) {
   if (r.mode === 'once') return !r.firedAt && typeof r.dueAt === 'number' ? r.dueAt : null;
   const m = /^(\d{1,2}):(\d{2})$/.exec(r.time || '');
@@ -191,156 +244,151 @@ function nextAtOf(r, now) {
   return c.getTime();
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function paintLists() {
+  const now = Date.now();
+  hTodos.update({
+    items: todos.slice(0, 30).map((t, i) => ({ id: `t${i}`, title: t.text.trim() })),
+  });
+  hRems.update({
+    items: reminders.map((r) => ({
+      id: r.id,
+      title: remDesc(r, now),
+      meta: r.projectLabel || '',
+    })),
+    selectedId: selectedRem,
+  });
 }
 
 async function refresh() {
-  err('');
+  showError('');
   try {
     const stem = overrideStem || (directory ? await stemOf(directory) : null);
     if (!stem) {
-      $('proj').textContent = '未打开目录';
-      $('todos').innerHTML = '';
-      $('todoCount').textContent = '';
-      $('pickerRow').hidden = true;
+      hHead.update({ text: '待办提醒' });
+      hSub.update({ text: '未打开目录' });
+      todos = [];
+      reminders = [];
     } else {
       todos = await readTodos(stem);
-      $('proj').textContent = overrideStem ? (pathFromStem(stem) || stem).split('/').pop() : projectLabel(directory);
-      $('todoCount').textContent = todos.length ? `（未完成 ${todos.length}）` : '（无未完成）';
-      $('todos').innerHTML = todos.slice(0, 20).map((t) => `<li>${escapeHtml(t.text.trim())}</li>`).join('')
-        + (todos.length > 20 ? `<li class="muted">…等 ${todos.length} 条</li>` : '');
+      const label = overrideStem ? ((pathFromStem(stem) || stem).split('/').pop() || stem) : projectLabel(directory);
+      hHead.update({ text: label });
+      hSub.update({ text: todos.length ? `未完成 ${todos.length} 条` : '当前没有未完成待办' });
       const key = await storageKey(stem);
       const v = await host.storage.get(key);
       reminders = v && Array.isArray(v.items) ? v.items : [];
     }
-    renderRems();
-    const st = await syncToService().catch((e) => { err(e.message); return null; });
+    paintLists();
+    paintSelection();
+    const st = await syncToService().catch((e) => { showError(e.message); return null; });
     if (st) {
-      $('svc').textContent = `· 服务运行中 · ${st.count} 条`;
-      // re-read: sync merged service-side fired state into storage
-      const v2 = await host.storage.get(key);
-      if (v2 && Array.isArray(v2.items)) { reminders = v2.items; renderRems(); }
-    } else if (!$('err').textContent) $('svc').textContent = '· 服务未就绪';
-  } catch (e) {
-    err(`读取失败：${e && e.message ? e.message : e}`);
-  }
-}
-
-function renderRems() {
-  const now = Date.now();
-  const box = $('rems');
-  if (!reminders.length) {
-    box.innerHTML = '<div class="muted">暂无提醒</div>';
-    return;
-  }
-  box.innerHTML = '';
-  for (const r of reminders) {
-    const div = document.createElement('div');
-    div.className = 'card';
-    let desc;
-    if (r.mode === 'once') {
-      desc = r.firedAt ? '单次 · 已触发' : `单次 · ${fmtRemain((r.dueAt || 0) - now)}`;
-    } else {
-      desc = `每天 · ${r.time || '??:??'}`;
-      const n = nextAtOf(r, now);
-      if (n) desc += `（${fmtRemain(n - now)}）`;
+      $('svc').textContent = `服务运行中 · ${st.count} 条`;
+      const key2 = stem ? await storageKey(stem) : null;
+      if (key2) {
+        const v2 = await host.storage.get(key2);
+        if (v2 && Array.isArray(v2.items)) { reminders = v2.items; paintLists(); paintSelection(); }
+      }
+    } else if (!$('errSlot').textContent) {
+      $('svc').textContent = '服务未就绪';
     }
-    div.innerHTML = `<div>${escapeHtml(desc)} <span class="muted">${escapeHtml(r.projectLabel || '')}</span></div>`;
-    const btn = document.createElement('button');
-    btn.textContent = '取消';
-    btn.onclick = async () => {
-      reminders = reminders.filter((x) => x.id !== r.id);
-      await persistCurrent();
-    };
-    div.appendChild(btn);
-    box.appendChild(div);
+  } catch (e) {
+    showError(`读取失败：${e && e.message ? e.message : e}`);
   }
 }
 
-async function persistCurrent() {
+function paintSelection() {
+  const r = reminders.find((x) => x.id === selectedRem);
+  $('selRow').hidden = !r;
+  if (r) hSelDesc.update({ text: `${remDesc(r, Date.now())} · ${r.projectLabel || ''}` });
+}
+
+function selectReminder(id) {
+  selectedRem = selectedRem === id ? null : id; // tap again to deselect
+  hRems.update({ selectedId: selectedRem });
+  paintSelection();
+}
+
+async function deleteSelected() {
+  if (!selectedRem) return;
+  reminders = reminders.filter((x) => x.id !== selectedRem);
+  selectedRem = null;
   const stem = overrideStem || (directory ? await stemOf(directory) : null);
-  if (!stem) return;
+  if (stem) await host.storage.set(await storageKey(stem), { version: 1, items: reminders });
+  await refresh();
+}
+
+/* ---------- actions ---------- */
+
+async function addReminder() {
+  showError('');
+  const stem = overrideStem || (directory ? await stemOf(directory) : null);
+  if (!stem) { showError('当前没有可用的目录，请先打开一个项目或手动选择。'); return; }
+  const label = overrideStem ? (((pathFromStem(stem) || stem).split('/').pop()) || 'todo') : projectLabel(directory);
+  if (mode === 'once') {
+    const mins = Math.max(1, Math.min(1440, Number(minutes) || 0));
+    if (!mins) { showError('请填写有效的分钟数。'); return; }
+    reminders.push({ id: uuid(), mode: 'once', dueAt: Date.now() + mins * 60000, projectLabel: label, stem, createdAt: Date.now(), firedAt: null });
+  } else {
+    if (!/^(\d{1,2}):(\d{2})$/.test(clock.trim())) { showError('时间格式应为 HH:mm，例如 09:30。'); return; }
+    reminders.push({ id: uuid(), mode: 'daily', time: clock.trim(), projectLabel: label, stem, createdAt: Date.now(), lastFiredOn: null });
+  }
   await host.storage.set(await storageKey(stem), { version: 1, items: reminders });
   await refresh();
 }
 
-function uuid() {
-  if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
-  return 'id-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 1e9).toString(36);
+async function testNotify() {
+  showError('');
+  try {
+    await host.serviceRequest({ method: 'POST', path: '/notify/test', body: { title: '⏰ 待办提醒 · 测试', body: '通知链路正常。面板关闭后提醒仍会弹出。' } });
+  } catch (e) {
+    showError(`测试失败：${e && e.message ? e.message : e}`);
+  }
 }
-
-/* ---------- manual project picker ---------- */
 
 async function fillPicker() {
   try {
     const { entries } = await host.listDir('~/.config/openchamber/projects');
     const opts = entries
       .filter((e) => e.kind === 'directory' && e.name.startsWith('path_'))
-      .map((e) => ({ stem: e.name, label: (pathFromStem(e.name) || e.name) }));
+      .map((e) => ({ stem: e.name, label: pathFromStem(e.name) || e.name }));
     if (!opts.length) return;
-    const sel = $('picker');
-    sel.innerHTML = '<option value="">（当前目录）</option>' + opts.map((o) =>
-      `<option value="${escapeHtml(o.stem)}">${escapeHtml(o.label.length > 60 ? '…' + o.label.slice(-59) : o.label)}</option>`).join('');
-    $('pickerRow').hidden = false;
-    sel.onchange = async () => {
-      overrideStem = sel.value || null;
-      await refresh();
-    };
-  } catch { /* listDir unavailable: picker stays hidden */ }
+    hPicker = mountSelect($('picker'), {
+      value: null,
+      placeholder: '（当前目录）',
+      options: [{ id: '', label: '（当前目录）' }, ...opts.slice(0, 100).map((o) => ({
+        id: o.stem,
+        label: o.label.length > 50 ? '…' + o.label.slice(-49) : o.label,
+      }))],
+      onChange: async (id) => {
+        overrideStem = id || null;
+        await refresh();
+      },
+    });
+    $('pickerSlot').hidden = false;
+  } catch { /* picker stays hidden */ }
 }
-
-/* ---------- events ---------- */
-
-$('mode').onchange = () => {
-  const daily = $('mode').value === 'daily';
-  $('onceBox').hidden = daily;
-  $('dailyBox').hidden = !daily;
-};
-
-$('add').onclick = async () => {
-  err('');
-  const stem = overrideStem || (directory ? await stemOf(directory) : null);
-  if (!stem) { err('当前没有可用的目录，请先打开一个项目或手动选择。'); return; }
-  const mode = $('mode').value;
-  const label = overrideStem ? ((pathFromStem(stem) || stem).split('/').pop() || 'todo') : projectLabel(directory);
-  if (mode === 'once') {
-    const mins = Math.max(1, Math.min(1440, Number($('minutes').value) || 0));
-    if (!mins) { err('请填写有效的分钟数。'); return; }
-    reminders.push({ id: uuid(), mode: 'once', dueAt: Date.now() + mins * 60000, projectLabel: label, stem, createdAt: Date.now(), firedAt: null });
-  } else {
-    if (!/^(\d{1,2}):(\d{2})$/.test($('clock').value.trim())) { err('时间格式应为 HH:mm，例如 09:30。'); return; }
-    reminders.push({ id: uuid(), mode: 'daily', time: $('clock').value.trim(), projectLabel: label, stem, createdAt: Date.now(), lastFiredOn: null });
-  }
-  await host.storage.set(await storageKey(stem), { version: 1, items: reminders });
-  await refresh();
-};
-
-$('test').onclick = async () => {
-  err('');
-  try {
-    await serviceCall('POST', '/notify/test', { title: '⏰ 待办提醒 · 测试', body: '通知链路正常。面板关闭后提醒仍会弹出。' });
-  } catch (e) {
-    err(`测试失败：${e && e.message ? e.message : e}`);
-  }
-};
-
-$('refresh').onclick = refresh;
 
 /* ---------- boot ---------- */
 
+async function onReadySnapshot(ctx) {
+  applyHostReady(ctx, document.documentElement);
+  directory = (ctx && ctx.directory) || null;
+  sessionTitle = (ctx && ctx.session && ctx.session.title) || null;
+}
+
 async function boot() {
+  mountChrome();
   const ready = await new Promise((resolve) => { host.onReady(resolve); });
-  document.body.dataset.theme = ready && ready.theme && ready.theme.mode === 'light' ? 'light' : 'dark';
-  directory = (ready && ready.directory) || null;
-  sessionTitle = (ready && ready.session && ready.session.title) || null;
+  await onReadySnapshot(ready);
+  try {
+    await host.onReady((ctx) => { onReadySnapshot(ctx).then(() => refresh().catch(() => {})); });
+  } catch { /* ignore */ }
   await fillPicker();
   await refresh();
-  try { unsub.push(await host.onDirectory(async (d) => { directory = d; overrideStem = null; $('picker').value = ''; await refresh(); })); } catch { /* ignore */ }
-  try { unsub.push(await host.onSession(async (s) => { sessionTitle = (s && s.title) || null; await refresh(); })); } catch { /* ignore */ }
-  setInterval(renderRems, 5000);
+  try { await host.onDirectory(async (d) => { directory = d; overrideStem = null; if (hPicker) hPicker.update({ value: null }); await refresh(); }); } catch { /* ignore */ }
+  try { await host.onSession(async (s) => { sessionTitle = (s && s.title) || null; await refresh(); }); } catch { /* ignore */ }
+  setInterval(() => { paintLists(); }, 5000);
   window.addEventListener('focus', () => { refresh().catch(() => {}); });
   window.addEventListener('beforeunload', () => { try { host.dispose(); } catch { /* ignore */ } });
 }
 
-boot().catch((e) => err(`启动失败：${e && e.message ? e.message : e}`));
+boot().catch((e) => showError(`启动失败：${e && e.message ? e.message : e}`));

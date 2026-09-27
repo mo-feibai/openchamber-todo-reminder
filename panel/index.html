@@ -5,46 +5,32 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>待办提醒</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { margin: 0; padding: 12px; font: 13px/1.5 system-ui, "Microsoft YaHei", sans-serif; }
-  body[data-theme="dark"] { background: #1e1e1e; color: #ddd; }
-  body[data-theme="light"] { background: #fff; color: #222; }
-  h3 { margin: 12px 0 6px; font-size: 13px; }
-  h3:first-child { margin-top: 0; }
-  .muted { opacity: .65; font-size: 12px; }
-  ul { margin: 4px 0; padding-left: 20px; }
-  li { margin: 2px 0; word-break: break-all; }
-  .row { display: flex; gap: 6px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
-  input, select, button { font: inherit; padding: 4px 8px; }
-  input[type="number"] { width: 64px; }
-  input[type="text"] { width: 90px; }
-  button { cursor: pointer; }
-  .card { border: 1px solid #8884; border-radius: 8px; padding: 8px 10px; margin: 6px 0; }
-  .warn { color: #c77; }
-  .ok { color: #4a4; }
-  #err { white-space: pre-wrap; }
+  /* Layout only — colors/fonts come from the host theme via applyHostReady. */
+  body { margin: 0; padding: 12px; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
+  .grow { flex: 1 1 auto; min-width: 0; }
+  .muted-line { opacity: .65; font-size: 12px; margin: 4px 0; }
+  #errSlot { margin: 8px 0; }
+  #errSlot:empty { margin: 0; }
 </style>
 </head>
 <body>
-  <h3>📋 <span id="proj">…</span> <span class="muted" id="todoCount"></span></h3>
-  <ul id="todos"></ul>
-  <div class="row muted" id="pickerRow" hidden>
-    <span>手动选择：</span><select id="picker"></select>
-  </div>
-  <h3>⏱ 新建提醒</h3>
-  <div class="row">
-    <select id="mode"><option value="once">单次</option><option value="daily">每天</option></select>
-    <span id="onceBox"> <input id="minutes" type="number" min="1" max="1440" value="25"> 分钟后</span>
-    <span id="dailyBox" hidden> <input id="clock" type="text" value="09:00" placeholder="HH:mm"></span>
-    <button id="add">开始</button>
-  </div>
-  <h3>🔔 已有提醒 <span class="muted" id="svc"></span></h3>
+  <div id="head"></div>
+  <div class="muted-line" id="sub"></div>
+  <div id="todos"></div>
+  <div id="pickerSlot" class="row" hidden><span class="grow" style="flex:0 0 auto">手动选择</span><span class="grow" id="picker"></span></div>
+  <div id="sep1"></div>
+  <div id="tabs"></div>
+  <div id="onceRow" class="row"><span class="grow" id="minutesField"></span><span>分钟后</span></div>
+  <div id="dailyRow" class="row" hidden><span class="grow" id="clockField"></span></div>
+  <div class="row" id="addRow"></div>
+  <div id="sep2"></div>
+  <div id="remsHead"></div>
   <div id="rems"></div>
-  <div class="row">
-    <button id="test">发送测试通知</button>
-    <button id="refresh">刷新</button>
-  </div>
-  <div id="err" class="warn"></div>
+  <div class="row" id="selRow" hidden><span class="grow" id="selDesc"></span><span id="delBtn"></span></div>
+  <div class="row" id="footRow"></div>
+  <div class="muted-line" id="svc"></div>
+  <div id="errSlot"></div>
   <script src="./main.js"></script>
 </body>
 </html>
