@@ -1,5 +1,10 @@
 # AGENTS.md — openchamber-todo-reminder
 
+## 发布
+
+- 每次改动面板/service/manifest 后必须 bump `package.json` 的 `version`，否则宿主检测不到更新（只推代码不升版本 = 用户侧无更新）。
+- 提交信息单行格式：`:sparkles: feat(提醒): <中文描述>`。
+
 ## 构建（本机无 bun，勿用官方 bunx 脚本）
 
 - `npm run build` = 面板 `esbuild --bundle --format=iife --platform=browser --minify` +
