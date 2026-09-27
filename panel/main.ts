@@ -130,7 +130,7 @@ function uuid() {
 /* ---------- kit handles (mounted once) ---------- */
 
 let hHead, hSub, hTodos, hPicker, hTabs, hMinutes, hClock, hAdd, hRemsHead, hRems;
-let hSelDesc, hDel, hTest, hRefresh, hErr;
+let hSelDesc, hDel, hRefresh, hErr;
 
 function mountChrome() {
   hHead = mountText($('head'), { text: '待办提醒' });
@@ -155,7 +155,6 @@ function mountChrome() {
   hRems = mountList($('rems'), { items: [], onSelect: (id) => selectReminder(id), emptyText: '暂无提醒', ariaLabel: '提醒列表' });
   hSelDesc = mountText($('selDesc'), { text: '' });
   hDel = mountButton($('delBtn'), { label: '取消该提醒', variant: 'destructive', size: 'sm', onClick: () => deleteSelected() });
-  hTest = mountButton($('footRow'), { label: '发送测试通知', variant: 'secondary', size: 'sm', onClick: () => testNotify() });
   hRefresh = mountButton($('footRow'), { label: '刷新', variant: 'ghost', size: 'sm', onClick: () => refresh() });
 }
 
@@ -236,9 +235,33 @@ function fmtRemain(ms) {
   return `剩余 ${Math.floor(m / 60)} 小时 ${m % 60} 分`;
 }
 
+function fmtAgo(ms) {
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return '刚刚';
+  if (m < 60) return `${m} 分钟前`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} 小时前`;
+  return `${Math.floor(h / 24)} 天前`;
+}
+
+/** Fired-once reminders stay listed for a day, then clean themselves up. */
+const DONE_TTL_MS = 24 * 60 * 60 * 1000;
+
+function prunable(r, now) {
+  return r.mode === 'once' && typeof r.firedAt === 'number' && now - r.firedAt > DONE_TTL_MS;
+}
+
+async function pruneDone(key, items) {
+  const now = Date.now();
+  if (!items.some((r) => prunable(r, now))) return items;
+  const kept = items.filter((r) => !prunable(r, now));
+  await host.storage.set(key, { version: 1, items: kept });
+  return kept;
+}
+
 function remDesc(r, now) {
   if (r.mode === 'once') {
-    if (r.firedAt) return '单次 · 已触发';
+    if (r.firedAt) return `单次 · 已提醒（${fmtAgo(now - r.firedAt)}）`;
     return `单次 · ${fmtRemain((r.dueAt || 0) - now)}`;
   }
   const n = nextAtOf(r, now);
@@ -265,6 +288,7 @@ function paintLists() {
       id: r.id,
       title: remDesc(r, now),
       meta: r.projectLabel || '',
+      disabled: r.mode === 'once' && Boolean(r.firedAt),
     })),
     selectedId: selectedRem,
   });
@@ -286,7 +310,7 @@ async function refresh() {
       hSub.update({ text: todos.length ? `未完成 ${todos.length} 条` : '当前没有未完成待办' });
       const key = await storageKey(stem);
       const v = await host.storage.get(key);
-      reminders = v && Array.isArray(v.items) ? v.items : [];
+      reminders = v && Array.isArray(v.items) ? await pruneDone(key, v.items) : [];
     }
     paintLists();
     paintSelection();
@@ -296,7 +320,11 @@ async function refresh() {
       const key2 = stem ? await storageKey(stem) : null;
       if (key2) {
         const v2 = await host.storage.get(key2);
-        if (v2 && Array.isArray(v2.items)) { reminders = v2.items; paintLists(); paintSelection(); }
+        if (v2 && Array.isArray(v2.items)) {
+          reminders = await pruneDone(key2, v2.items);
+          paintLists();
+          paintSelection();
+        }
       }
     } else if (!$('errSlot').textContent) {
       $('svc').textContent = '服务未就绪';
@@ -346,15 +374,6 @@ async function addReminder() {
   }
   await host.storage.set(await storageKey(stem), { version: 1, items: reminders });
   await refresh();
-}
-
-async function testNotify() {
-  showError('');
-  try {
-    await host.serviceRequest({ method: 'POST', path: '/notify/test', body: JSON.stringify({ title: '⏰ 待办提醒 · 测试', body: '通知链路正常。面板关闭后提醒仍会弹出。' }) });
-  } catch (e) {
-    showError(`测试失败：${e && e.message ? e.message : e}`);
-  }
 }
 
 async function fillPicker() {
