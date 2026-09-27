@@ -343,9 +343,27 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-await loadStore();
-await fireOverdue(Date.now());
-armTimer();
-server.listen(PORT, '127.0.0.1', () => {
+process.on('unhandledRejection', (err) => log('unhandled rejection:', err && err.message ? err.message : err));
+process.on('uncaughtException', (err) => {
+  log('uncaught exception:', err && err.message ? err.message : err);
+  process.exitCode = 1;
+});
+
+async function main() {
+  await loadStore();
+  await fireOverdue(Date.now());
+  armTimer();
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(PORT, '127.0.0.1', () => {
+      server.removeListener('error', reject);
+      resolve();
+    });
+  });
   log(`listening on 127.0.0.1:${server.address().port}, ${store.items.length} reminder(s) loaded`);
+}
+
+main().catch((err) => {
+  log('startup failed:', err && err.message ? err.message : err);
+  process.exitCode = 1;
 });
